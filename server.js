@@ -35,22 +35,34 @@ const quizData = [
   { question: 'Who invented the lightbulb?', options: ['Tesla', 'Edison', 'Bell'], answer: 'Edison' }
 ];
 
-const userStates = {};
+const userStates = {}; // Per-user quiz state
+const userScores = {}; // Persistent user scores
 
 app.post('/webhook', async (req, res) => {
   const message = req.body.message;
+  if (!message || !message.text) return res.sendStatus(200);
+
   const chatId = message.chat.id;
-  const text = message.text;
+  const text = message.text.trim();
 
   if (!userStates[chatId]) {
     userStates[chatId] = { current: 0, score: 0 };
   }
 
   if (text === '/start') {
-    await sendMessage(chatId, 'Welcome to Quick Quiz! Type /quiz to begin.');
+    await sendMessage(chatId, '👋 Welcome to Quick Quiz! Type /quiz to begin or /leaderboard to see top scores.');
   } else if (text === '/quiz') {
     userStates[chatId] = { current: 0, score: 0 };
     sendQuestion(chatId);
+  } else if (text === '/leaderboard') {
+    const topPlayers = Object.entries(userScores)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([id, score], i) => `${i + 1}. ${id} ➤ ${score} pts`)
+      .join('\n');
+
+    const response = topPlayers || '🏆 No scores yet! Be the first to play!';
+    await sendMessage(chatId, `🏆 Leaderboard:\n${response}`);
   } else {
     checkAnswer(chatId, text);
   }
@@ -65,11 +77,17 @@ async function sendQuestion(chatId) {
     const options = q.options.map(opt => [{ text: opt, callback_data: opt }]);
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
       chat_id: chatId,
-      text: `Q${state.current + 1}: ${q.question}`,
-      reply_markup: { keyboard: options, one_time_keyboard: true, resize_keyboard: true }
+      text: `❓ Q${state.current + 1}: ${q.question}`,
+      reply_markup: {
+        keyboard: options,
+        one_time_keyboard: true,
+        resize_keyboard: true
+      }
     });
   } else {
-    await sendMessage(chatId, `Quiz finished! Your score: ${state.score}/${quizData.length}`);
+    const score = state.score;
+    userScores[chatId] = (userScores[chatId] || 0) + score;
+    await sendMessage(chatId, `🎉 Quiz finished! Your score: ${score}/${quizData.length}`);
     delete userStates[chatId];
   }
 }

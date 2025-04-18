@@ -1,10 +1,9 @@
 // server.js
-import express from 'express';
-import bodyParser from 'body-parser';
-import axios from 'axios';
-import cors from 'cors';
+const express = require('express');
+const bodyParser = require('body-parser');
+const axios = require('axios');
+require('dotenv').config();
 
-dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 10000;
 const TELEGRAM_TOKEN = process.env.BOT_TOKEN;
@@ -12,22 +11,6 @@ const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
 app.use(bodyParser.json());
 
-// Quiz questions by category
-// server.js
-import express from 'express';
-import bodyParser from 'body-parser';
-import axios from 'axios';
-import dotenv from 'dotenv';
-
-dotenv.config();
-const app = express();
-const PORT = process.env.PORT || 10000;
-const TELEGRAM_TOKEN = process.env.BOT_TOKEN;
-const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
-
-app.use(bodyParser.json());
-
-// Quiz questions by category
 const quizzes = {
   General: [
     { question: 'Capital of France?', options: ['Paris', 'London', 'Berlin'], answer: 'Paris' },
@@ -98,99 +81,69 @@ const quizzes = {
 };
 
 const userStates = {};
-const leaderboard = {};
 
 app.post('/webhook', async (req, res) => {
   const message = req.body.message;
-  if (!message || !message.chat) return res.sendStatus(200);
+  if (!message || !message.chat || !message.text) return res.sendStatus(200);
+
   const chatId = message.chat.id;
   const text = message.text;
 
-  if (!userStates[chatId]) {
-    userStates[chatId] = {};
-  }
+  if (!userStates[chatId]) userStates[chatId] = {};
 
   const state = userStates[chatId];
 
   if (text === '/start') {
-    await sendMessage(chatId, '🎉 Welcome to Quick Quiz!\nType /quiz to begin or /leaderboard to view top players.');
+    await sendMessage(chatId, '👋 Welcome to Quick Quiz! Type /quiz to begin.');
   } else if (text === '/quiz') {
-    await sendCategorySelection(chatId);
-  } else if (quizCategories[text]) {
+    const categories = Object.keys(quizzes);
+    const keyboard = categories.map(cat => [{ text: cat }]);
+    await axios.post(`${TELEGRAM_API}/sendMessage`, {
+      chat_id: chatId,
+      text: 'Choose a category:',
+      reply_markup: { keyboard, resize_keyboard: true }
+    });
+  } else if (quizzes[text]) {
     state.category = text;
-    state.questions = [...quizCategories[text]];
     state.current = 0;
     state.score = 0;
     sendQuestion(chatId);
-  } else if (text === '/leaderboard') {
-    const sorted = Object.entries(leaderboard)
-      .sort(([, a], [, b]) => b - a)
-      .map(([user, score], i) => `${i + 1}. ${user} - ${score} pts`)
-      .slice(0, 5)
-      .join('\n') || '🏆 No scores yet!';
-    await sendMessage(chatId, `🏆 Leaderboard:\n${sorted}`);
-  } else if (state.questions && state.questions[state.current]) {
-    clearTimeout(state.timer); // clear timer if answered in time
+  } else if (state.category) {
     checkAnswer(chatId, text);
   }
 
   res.sendStatus(200);
 });
 
-async function sendCategorySelection(chatId) {
-  const categories = Object.keys(quizCategories).map(c => [{ text: c }]);
-  await axios.post(`${TELEGRAM_API}/sendMessage`, {
-    chat_id: chatId,
-    text: '🧠 Choose a quiz category:',
-    reply_markup: {
-      keyboard: categories,
-      one_time_keyboard: true,
-      resize_keyboard: true
-    }
-  });
-}
-
 async function sendQuestion(chatId) {
   const state = userStates[chatId];
-  if (state.current < state.questions.length) {
-    const q = state.questions[state.current];
-    const options = q.options.map(opt => [{ text: opt }]);
+  const questions = quizzes[state.category];
 
+  if (state.current < questions.length) {
+    const q = questions[state.current];
+    const options = q.options.map(opt => [{ text: opt }]);
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
       chat_id: chatId,
       text: `Q${state.current + 1}: ${q.question}`,
-      reply_markup: {
-        keyboard: options,
-        one_time_keyboard: true,
-        resize_keyboard: true
-      }
+      reply_markup: { keyboard: options, one_time_keyboard: true, resize_keyboard: true }
     });
-
-    // Set 10s timer
-    state.timer = setTimeout(() => {
-      sendMessage(chatId, '⏱ Time up!');
-      state.current++;
-      sendQuestion(chatId);
-    }, 10000);
-
   } else {
-    await sendMessage(chatId, `✅ Quiz complete! You scored ${state.score}/${state.questions.length}`);
-    const username = `User_${chatId}`;
-    leaderboard[username] = Math.max(state.score, leaderboard[username] || 0);
+    await sendMessage(chatId, `🏁 Quiz over! Your score: ${state.score}/${quizzes[state.category].length}`);
     delete userStates[chatId];
   }
 }
 
 async function checkAnswer(chatId, text) {
   const state = userStates[chatId];
-  const q = state.questions[state.current];
+  const currentQ = quizzes[state.category][state.current];
 
-  if (text === q.answer) {
+  if (text === currentQ.answer) {
     state.score++;
     await sendMessage(chatId, '✅ Correct!');
   } else {
-    await sendMessage(chatId, `❌ Wrong. Answer: ${q.answer}`);
+    await sendMessage(chatId, `❌ Wrong! Correct answer was: ${currentQ.answer}`);
   }
+
   state.current++;
   sendQuestion(chatId);
 }
@@ -198,126 +151,12 @@ async function checkAnswer(chatId, text) {
 async function sendMessage(chatId, text) {
   await axios.post(`${TELEGRAM_API}/sendMessage`, {
     chat_id: chatId,
-    text
+    text: text
   });
 }
 
 app.get('/', (req, res) => {
-  res.send('Quick Quiz Bot is running!');
-});
-
-app.listen(PORT, () => {
-  console.log(`✅ Webhook listening on port ${PORT}`);
-});
-
-
-const userStates = {};
-const leaderboard = {};
-
-app.post('/webhook', async (req, res) => {
-  const message = req.body.message;
-  if (!message || !message.chat) return res.sendStatus(200);
-  const chatId = message.chat.id;
-  const text = message.text;
-
-  if (!userStates[chatId]) {
-    userStates[chatId] = {};
-  }
-
-  const state = userStates[chatId];
-
-  if (text === '/start') {
-    await sendMessage(chatId, '🎉 Welcome to Quick Quiz!\nType /quiz to begin or /leaderboard to view top players.');
-  } else if (text === '/quiz') {
-    await sendCategorySelection(chatId);
-  } else if (quizCategories[text]) {
-    state.category = text;
-    state.questions = [...quizCategories[text]];
-    state.current = 0;
-    state.score = 0;
-    sendQuestion(chatId);
-  } else if (text === '/leaderboard') {
-    const sorted = Object.entries(leaderboard)
-      .sort(([, a], [, b]) => b - a)
-      .map(([user, score], i) => `${i + 1}. ${user} - ${score} pts`)
-      .slice(0, 5)
-      .join('\n') || '🏆 No scores yet!';
-    await sendMessage(chatId, `🏆 Leaderboard:\n${sorted}`);
-  } else if (state.questions && state.questions[state.current]) {
-    clearTimeout(state.timer); // clear timer if answered in time
-    checkAnswer(chatId, text);
-  }
-
-  res.sendStatus(200);
-});
-
-async function sendCategorySelection(chatId) {
-  const categories = Object.keys(quizCategories).map(c => [{ text: c }]);
-  await axios.post(`${TELEGRAM_API}/sendMessage`, {
-    chat_id: chatId,
-    text: '🧠 Choose a quiz category:',
-    reply_markup: {
-      keyboard: categories,
-      one_time_keyboard: true,
-      resize_keyboard: true
-    }
-  });
-}
-
-async function sendQuestion(chatId) {
-  const state = userStates[chatId];
-  if (state.current < state.questions.length) {
-    const q = state.questions[state.current];
-    const options = q.options.map(opt => [{ text: opt }]);
-
-    await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: chatId,
-      text: `Q${state.current + 1}: ${q.question}`,
-      reply_markup: {
-        keyboard: options,
-        one_time_keyboard: true,
-        resize_keyboard: true
-      }
-    });
-
-    // Set 10s timer
-    state.timer = setTimeout(() => {
-      sendMessage(chatId, '⏱ Time up!');
-      state.current++;
-      sendQuestion(chatId);
-    }, 10000);
-
-  } else {
-    await sendMessage(chatId, `✅ Quiz complete! You scored ${state.score}/${state.questions.length}`);
-    const username = `User_${chatId}`;
-    leaderboard[username] = Math.max(state.score, leaderboard[username] || 0);
-    delete userStates[chatId];
-  }
-}
-
-async function checkAnswer(chatId, text) {
-  const state = userStates[chatId];
-  const q = state.questions[state.current];
-
-  if (text === q.answer) {
-    state.score++;
-    await sendMessage(chatId, '✅ Correct!');
-  } else {
-    await sendMessage(chatId, `❌ Wrong. Answer: ${q.answer}`);
-  }
-  state.current++;
-  sendQuestion(chatId);
-}
-
-async function sendMessage(chatId, text) {
-  await axios.post(`${TELEGRAM_API}/sendMessage`, {
-    chat_id: chatId,
-    text
-  });
-}
-
-app.get('/', (req, res) => {
-  res.send('Quick Quiz Bot is running!');
+  res.send('Quiz bot is live with categories!');
 });
 
 app.listen(PORT, () => {

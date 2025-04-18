@@ -1,9 +1,10 @@
 // server.js
-const express = require('express');
-const bodyParser = require('body-parser');
-const axios = require('axios');
-require('dotenv').config();
+import express from 'express';
+import bodyParser from 'body-parser';
+import axios from 'axios';
+import dotenv from 'dotenv';
 
+dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 10000;
 const TELEGRAM_TOKEN = process.env.BOT_TOKEN;
@@ -11,95 +12,119 @@ const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
 app.use(bodyParser.json());
 
-// Sample general knowledge questions
-const quizData = [
-  { question: 'What is the capital of France?', options: ['Paris', 'London', 'Berlin'], answer: 'Paris' },
-  { question: 'Which planet is known as the Red Planet?', options: ['Earth', 'Mars', 'Venus'], answer: 'Mars' },
-  { question: 'Who wrote Hamlet?', options: ['Shakespeare', 'Hemingway', 'Frost'], answer: 'Shakespeare' },
-  { question: 'What is the boiling point of water?', options: ['90°C', '100°C', '110°C'], answer: '100°C' },
-  { question: 'Who painted the Mona Lisa?', options: ['Van Gogh', 'Picasso', 'Da Vinci'], answer: 'Da Vinci' },
-  { question: 'Which country is known for the maple leaf?', options: ['USA', 'Canada', 'Germany'], answer: 'Canada' },
-  { question: 'Which ocean is the largest?', options: ['Atlantic', 'Indian', 'Pacific'], answer: 'Pacific' },
-  { question: 'Who discovered gravity?', options: ['Einstein', 'Newton', 'Galileo'], answer: 'Newton' },
-  { question: 'What is H2O?', options: ['Oxygen', 'Water', 'Hydrogen'], answer: 'Water' },
-  { question: 'What language is spoken in Brazil?', options: ['Spanish', 'Portuguese', 'French'], answer: 'Portuguese' },
-  { question: 'What is the currency of Japan?', options: ['Yuan', 'Yen', 'Won'], answer: 'Yen' },
-  { question: 'Which is the largest mammal?', options: ['Elephant', 'Whale', 'Giraffe'], answer: 'Whale' },
-  { question: 'What gas do plants absorb?', options: ['Oxygen', 'Carbon Dioxide', 'Hydrogen'], answer: 'Carbon Dioxide' },
-  { question: 'Which country hosted the 2016 Olympics?', options: ['China', 'Brazil', 'UK'], answer: 'Brazil' },
-  { question: 'What is the square root of 64?', options: ['6', '8', '10'], answer: '8' },
-  { question: 'Which metal is liquid at room temp?', options: ['Mercury', 'Iron', 'Gold'], answer: 'Mercury' },
-  { question: 'How many continents are there?', options: ['5', '6', '7'], answer: '7' },
-  { question: 'What do bees make?', options: ['Milk', 'Honey', 'Wax'], answer: 'Honey' },
-  { question: 'Which bird is a universal peace symbol?', options: ['Crow', 'Dove', 'Sparrow'], answer: 'Dove' },
-  { question: 'Who invented the lightbulb?', options: ['Tesla', 'Edison', 'Bell'], answer: 'Edison' }
-];
+// Quiz questions by category
+const quizCategories = {
+  General: [
+    { question: 'Capital of France?', options: ['Paris', 'London', 'Berlin'], answer: 'Paris' },
+    { question: 'Red Planet?', options: ['Earth', 'Mars', 'Venus'], answer: 'Mars' },
+  ],
+  History: [
+    { question: 'Who was the first US President?', options: ['Lincoln', 'Washington', 'Adams'], answer: 'Washington' },
+    { question: 'When did WWII end?', options: ['1945', '1940', '1950'], answer: '1945' },
+  ],
+  Tech: [
+    { question: 'HTML stands for?', options: ['HyperText Markup Language', 'HighText Machine Language', 'Hot Mail'], answer: 'HyperText Markup Language' },
+    { question: 'Founder of Microsoft?', options: ['Jobs', 'Gates', 'Musk'], answer: 'Gates' },
+  ],
+  Movies: [
+    { question: 'Titanic director?', options: ['Cameron', 'Spielberg', 'Nolan'], answer: 'Cameron' },
+    { question: 'Which movie has "I am your father"?', options: ['Star Wars', 'Harry Potter', 'Matrix'], answer: 'Star Wars' },
+  ]
+};
 
-const userStates = {}; // Per-user quiz state
-const userScores = {}; // Persistent user scores
+const userStates = {};
+const leaderboard = {};
 
 app.post('/webhook', async (req, res) => {
   const message = req.body.message;
-  if (!message || !message.text) return res.sendStatus(200);
-
+  if (!message || !message.chat) return res.sendStatus(200);
   const chatId = message.chat.id;
-  const text = message.text.trim();
+  const text = message.text;
 
   if (!userStates[chatId]) {
-    userStates[chatId] = { current: 0, score: 0 };
+    userStates[chatId] = {};
   }
 
+  const state = userStates[chatId];
+
   if (text === '/start') {
-    await sendMessage(chatId, '👋 Welcome to Quick Quiz! Type /quiz to begin or /leaderboard to see top scores.');
+    await sendMessage(chatId, '🎉 Welcome to Quick Quiz!\nType /quiz to begin or /leaderboard to view top players.');
   } else if (text === '/quiz') {
-    userStates[chatId] = { current: 0, score: 0 };
+    await sendCategorySelection(chatId);
+  } else if (quizCategories[text]) {
+    state.category = text;
+    state.questions = [...quizCategories[text]];
+    state.current = 0;
+    state.score = 0;
     sendQuestion(chatId);
   } else if (text === '/leaderboard') {
-    const topPlayers = Object.entries(userScores)
-      .sort((a, b) => b[1] - a[1])
+    const sorted = Object.entries(leaderboard)
+      .sort(([, a], [, b]) => b - a)
+      .map(([user, score], i) => `${i + 1}. ${user} - ${score} pts`)
       .slice(0, 5)
-      .map(([id, score], i) => `${i + 1}. ${id} ➤ ${score} pts`)
-      .join('\n');
-
-    const response = topPlayers || '🏆 No scores yet! Be the first to play!';
-    await sendMessage(chatId, `🏆 Leaderboard:\n${response}`);
-  } else {
+      .join('\n') || '🏆 No scores yet!';
+    await sendMessage(chatId, `🏆 Leaderboard:\n${sorted}`);
+  } else if (state.questions && state.questions[state.current]) {
+    clearTimeout(state.timer); // clear timer if answered in time
     checkAnswer(chatId, text);
   }
 
   res.sendStatus(200);
 });
 
+async function sendCategorySelection(chatId) {
+  const categories = Object.keys(quizCategories).map(c => [{ text: c }]);
+  await axios.post(`${TELEGRAM_API}/sendMessage`, {
+    chat_id: chatId,
+    text: '🧠 Choose a quiz category:',
+    reply_markup: {
+      keyboard: categories,
+      one_time_keyboard: true,
+      resize_keyboard: true
+    }
+  });
+}
+
 async function sendQuestion(chatId) {
   const state = userStates[chatId];
-  if (state.current < quizData.length) {
-    const q = quizData[state.current];
-    const options = q.options.map(opt => [{ text: opt, callback_data: opt }]);
+  if (state.current < state.questions.length) {
+    const q = state.questions[state.current];
+    const options = q.options.map(opt => [{ text: opt }]);
+
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
       chat_id: chatId,
-      text: `❓ Q${state.current + 1}: ${q.question}`,
+      text: `Q${state.current + 1}: ${q.question}`,
       reply_markup: {
         keyboard: options,
         one_time_keyboard: true,
         resize_keyboard: true
       }
     });
+
+    // Set 10s timer
+    state.timer = setTimeout(() => {
+      sendMessage(chatId, '⏱ Time up!');
+      state.current++;
+      sendQuestion(chatId);
+    }, 10000);
+
   } else {
-    const score = state.score;
-    userScores[chatId] = (userScores[chatId] || 0) + score;
-    await sendMessage(chatId, `🎉 Quiz finished! Your score: ${score}/${quizData.length}`);
+    await sendMessage(chatId, `✅ Quiz complete! You scored ${state.score}/${state.questions.length}`);
+    const username = `User_${chatId}`;
+    leaderboard[username] = Math.max(state.score, leaderboard[username] || 0);
     delete userStates[chatId];
   }
 }
 
 async function checkAnswer(chatId, text) {
   const state = userStates[chatId];
-  const currentQ = quizData[state.current];
-  if (text === currentQ.answer) {
+  const q = state.questions[state.current];
+
+  if (text === q.answer) {
     state.score++;
     await sendMessage(chatId, '✅ Correct!');
   } else {
-    await sendMessage(chatId, `❌ Wrong. Correct answer was: ${currentQ.answer}`);
+    await sendMessage(chatId, `❌ Wrong. Answer: ${q.answer}`);
   }
   state.current++;
   sendQuestion(chatId);
@@ -108,12 +133,12 @@ async function checkAnswer(chatId, text) {
 async function sendMessage(chatId, text) {
   await axios.post(`${TELEGRAM_API}/sendMessage`, {
     chat_id: chatId,
-    text: text
+    text
   });
 }
 
 app.get('/', (req, res) => {
-  res.send('Quiz bot is live!');
+  res.send('Quick Quiz Bot is running!');
 });
 
 app.listen(PORT, () => {

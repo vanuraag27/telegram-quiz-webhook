@@ -123,9 +123,23 @@ app.post('/webhook', async (req, res) => {
     await sendMessage(chatId, '🎉 Welcome to Quick Quiz!\nType /quiz to begin or /leaderboard to view top players.');
   } else if (text === '/quiz') {
     await sendCategorySelection(chatId);
-  } else if (quizCategories[text]) {
+  } else if (quizCategories[text] || text === 'Mixed') {
     state.category = text;
-    state.questions = [...quizCategories[text]];
+    
+    if (text === 'Mixed') {
+      const mixCount = 5;
+      const shuffle = arr => arr.sort(() => Math.random() - 0.5);
+      const allMixed = [
+        ...shuffle(quizCategories.General).slice(0, mixCount),
+        ...shuffle(quizCategories.History).slice(0, mixCount),
+        ...shuffle(quizCategories.Tech).slice(0, mixCount),
+        ...shuffle(quizCategories.Movies).slice(0, mixCount)
+      ];
+      state.questions = shuffle(allMixed);
+    } else {
+      state.questions = [...quizCategories[text]];
+    }
+
     state.current = 0;
     state.score = 0;
     sendQuestion(chatId);
@@ -145,7 +159,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 async function sendCategorySelection(chatId) {
-  const categories = Object.keys(quizCategories).map(c => [{ text: c }]);
+  const categories = [...Object.keys(quizCategories), 'Mixed'].map(c => [{ text: c }]);
   await axios.post(`${TELEGRAM_API}/sendMessage`, {
     chat_id: chatId,
     text: '🧠 Choose a quiz category:',

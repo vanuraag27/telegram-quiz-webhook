@@ -81,8 +81,26 @@ const quizCategories = {
     { question: 'First iPhone launch year?', options: ['2005', '2007', '2010'], answer: '2007' }
   ],
   Movies: [
-    { question: 'Titanic director?', options: ['Cameron', 'Spielberg', 'Nolan'], answer: 'Cameron' },
-    { question: 'Which movie has "I am your father"?', options: ['Star Wars', 'Harry Potter', 'Matrix'], answer: 'Star Wars' },
+    { question: 'Who directed Titanic?', options: ['James Cameron', 'Steven Spielberg', 'Christopher Nolan'], answer: 'James Cameron' },
+    { question: 'Which movie won Best Picture in 2020?', options: ['1917', 'Joker', 'Parasite'], answer: 'Parasite' },
+    { question: 'Hogwarts is a school in?', options: ['Narnia', 'Middle Earth', 'Harry Potter'], answer: 'Harry Potter' },
+    { question: 'Which superhero is part of the Avengers?', options: ['Batman', 'Iron Man', 'Superman'], answer: 'Iron Man' },
+    { question: 'Actor of Jack Sparrow?', options: ['Brad Pitt', 'Johnny Depp', 'Leonardo DiCaprio'], answer: 'Johnny Depp' },
+    { question: 'Frozen character with ice powers?', options: ['Elsa', 'Anna', 'Moana'], answer: 'Elsa' },
+    { question: 'Which movie is about dreams within dreams?', options: ['Interstellar', 'Inception', 'Tenet'], answer: 'Inception' },
+    { question: 'Highest-grossing movie (as of 2023)?', options: ['Avatar', 'Endgame', 'Titanic'], answer: 'Avatar' },
+    { question: 'Who voiced Simba in 1994 Lion King?', options: ['Jonathan Taylor Thomas', 'Tom Hanks', 'Robin Williams'], answer: 'Jonathan Taylor Thomas' },
+    { question: 'Who played the Joker in The Dark Knight?', options: ['Heath Ledger', 'Joaquin Phoenix', 'Jared Leto'], answer: 'Heath Ledger' },
+    { question: 'Which movie features "May the Force be with you"?', options: ['Star Trek', 'Star Wars', 'Guardians of the Galaxy'], answer: 'Star Wars' },
+    { question: 'Which Pixar film is about emotions?', options: ['Up', 'Inside Out', 'Toy Story'], answer: 'Inside Out' },
+    { question: 'What is the name of the hobbit played by Elijah Wood?', options: ['Frodo', 'Sam', 'Pippin'], answer: 'Frodo' },
+    { question: 'Movie with blue alien race on Pandora?', options: ['Avatar', 'Dune', 'Guardians'], answer: 'Avatar' },
+    { question: 'Wakanda is from which movie?', options: ['Black Panther', 'Avengers', 'Thor'], answer: 'Black Panther' },
+    { question: 'Which actor played Forrest Gump?', options: ['Tom Hanks', 'Matt Damon', 'Brad Pitt'], answer: 'Tom Hanks' },
+    { question: 'Which movie has the song "Let It Go"?', options: ['Tangled', 'Frozen', 'Moana'], answer: 'Frozen' },
+    { question: 'Which movie is a musical?', options: ['La La Land', 'Joker', 'Inception'], answer: 'La La Land' },
+    { question: 'Neo is a character in?', options: ['Matrix', 'Inception', 'John Wick'], answer: 'Matrix' },
+    { question: 'Which movie has dinosaurs?', options: ['Jurassic Park', 'King Kong', 'Transformers'], answer: 'Jurassic Park' }
   ]
 };
 

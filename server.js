@@ -173,12 +173,12 @@ async function sendQuestion(chatId) {
       }
     });
 
-    // Set 10s timer
+    // Set 30s timer
     state.timer = setTimeout(() => {
       sendMessage(chatId, '⏱ Time up!');
       state.current++;
       sendQuestion(chatId);
-    }, 10000);
+    }, 30000);
 
   } else {
     await sendMessage(chatId, `✅ Quiz complete! You scored ${state.score}/${state.questions.length}`);

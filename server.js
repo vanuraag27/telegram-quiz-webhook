@@ -1,35 +1,25 @@
 import express from 'express';
-import axios from 'axios';
+import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 
 dotenv.config();
+
 const app = express();
-const port = process.env.PORT || 3000;
-const TELEGRAM_API = `https://api.telegram.org/bot${process.env.BOT_TOKEN}`;
+const PORT = process.env.PORT || 10000;
 
-app.use(express.json());
+app.use(bodyParser.json());
 
-app.post('/webhook', async (req, res) => {
-  const update = req.body;
+app.post('/webhook', (req, res) => {
+  const message = req.body.message;
 
-  if (update.message?.web_app_data?.data) {
-    const userId = update.message.from.id;
-    const data = JSON.parse(update.message.web_app_data.data);
-
-    if (data.type === 'quiz_result') {
-      const score = data.score;
-
-      // Send result to user
-      await axios.post(`${TELEGRAM_API}/sendMessage`, {
-        chat_id: userId,
-        text: `🎉 You scored ${score}/3 in the quiz! Thanks for playing.`
-      });
-    }
+  if (message && message.text) {
+    console.log(`Received message from ${message.from.username}: ${message.text}`);
+    // Add your quiz logic here
   }
 
-  res.sendStatus(200);
+  res.sendStatus(200); // Let Telegram know we received the message
 });
 
-app.listen(port, () => {
-  console.log(`Webhook listening on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`Webhook listening on port ${PORT}`);
 });

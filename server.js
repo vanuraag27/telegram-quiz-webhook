@@ -97,7 +97,6 @@ const quizzes = {
   ]
 };
 
-
 const userStates = {};
 const leaderboard = {};
 

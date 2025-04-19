@@ -4,7 +4,7 @@ import axios from 'axios';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 
-dotenv.config();  // Load BOT_TOKEN from .env / Render env
+dotenv.config();  // Load environment variables
 
 const app = express();
 app.use(bodyParser.json());
@@ -16,60 +16,127 @@ if (!BOT_TOKEN) {
 }
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-// Debug helper
-async function sendMessage(chatId, text) {
-  console.log(`➡️ Sending to ${chatId}: ${text}`);
+// In-memory user sessions
+const userSessions = {};
+// Valid quiz categories
+const VALID_CATEGORIES = ['history', 'science', 'movies', 'general knowledge'];
+
+// Fetch dynamic questions
+async function fetchQuestions(category, limit = 5) {
   try {
-    await axios.post(`${TELEGRAM_API}/sendMessage`, { chat_id: chatId, text });
-  } catch (err) {
-    console.error('❌ sendMessage error:', err.response?.data || err.message);
+    const response = await axios.get('https://the-trivia-api.com/v2/questions', {
+      params: { categories: category.toLowerCase(), limit },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('❌ Error fetching questions:', error?.response?.data || error.message);
+    return [];
   }
 }
 
-app.post('/webhook', async (req, res) => {
-  // 1) Log the full update so we can inspect it in Render logs
-  console.log('📩 Incoming update:', JSON.stringify(req.body, null, 2));
+// Format a question for Telegram
+function formatQuestion(q, index) {
+  const { question, correctAnswer, incorrectAnswers } = q;
+  const all = [...incorrectAnswers, correctAnswer].sort(() => Math.random() - 0.5);
+  const options = all.map((ans, i) => `${String.fromCharCode(65 + i)}. ${ans}`).join('\n');
+  return `Q${index + 1}: ${question.text}\n${options}`;
+}
 
-  const message = req.body.message;
-  if (!message || !message.chat || !message.text) {
-    return res.sendStatus(200);
+// Send message via Telegram API
+async function sendMessage(chatId, text) {
+  try {
+    await axios.post(`${TELEGRAM_API}/sendMessage`, { chat_id: chatId, text });
+  } catch (err) {
+    console.error('❌ sendMessage error:', err?.response?.data || err.message);
   }
+}
 
-  const chatId = message.chat.id;
-  const text = message.text.trim();
+// Telegram webhook handler
+app.post('/webhook', (req, res) => {
+  // Immediate 200 to avoid Telegram timeouts
+  res.sendStatus(200);
 
-  // 2) Handle /start
-  if (text === '/start') {
-    await sendMessage(
-      chatId,
-      '👋 Welcome to QuickQuiz!\nType /quiz to begin or choose a category:\n• history\n• science\n• movies\n• general knowledge'
-    );
-    return res.sendStatus(200);
+  // Process update
+  console.log('📩 Incoming update:', JSON.stringify(req.body));
+  const msg = req.body.message;
+  if (!msg || !msg.chat || !msg.text) return;
+
+  const chatId = msg.chat.id;
+  const text = msg.text.trim().toLowerCase();
+
+  // Initialize session
+  if (!userSessions[chatId]) {
+    userSessions[chatId] = { questions: [], currentQuestionIndex: 0, score: 0, answersMap: [] };
   }
+  const session = userSessions[chatId];
 
-  // 3) /quiz command
-  if (text === '/quiz') {
-    await sendMessage(chatId, 'Please type one of these categories:\nhistory | science | movies | general knowledge');
-    return res.sendStatus(200);
-  }
+  (async () => {
+    if (text === '/start') {
+      await sendMessage(chatId,
+        '👋 Welcome to QuickQuiz!\nType /quiz to begin or choose a category:\n• history\n• science\n• movies\n• general knowledge'
+      );
+      return;
+    }
 
-  // 4) Category selection (lowercased)
-  const category = text.toLowerCase();
-  const valid = ['history', 'science', 'movies', 'general knowledge'];
-  if (valid.includes(category)) {
-    // For brevity, just echo back
-    await sendMessage(chatId, `You selected *${category}*. (Quiz logic goes here.)`);
-    return res.sendStatus(200);
-  }
+    if (text === '/quiz') {
+      await sendMessage(chatId, 'Please type a category: history | science | movies | general knowledge');
+      return;
+    }
 
-  // 5) Fallback
-  await sendMessage(chatId, `❓ I didn't understand that. Send /start to begin.`);
-  return res.sendStatus(200);
+    if (VALID_CATEGORIES.includes(text)) {
+      session.questions = await fetchQuestions(text, 5);
+      session.currentQuestionIndex = 0;
+      session.score = 0;
+
+      if (!session.questions.length) {
+        await sendMessage(chatId, '⚠️ Could not fetch questions. Try again later.');
+        return;
+      }
+
+      const q = session.questions[0];
+      session.answersMap = [...q.incorrectAnswers, q.correctAnswer].sort(() => Math.random() - 0.5);
+      await sendMessage(chatId, `🎯 Let's start!\n\n${formatQuestion(q, 0)}`);
+      return;
+    }
+
+    // Answer handling
+    if (session.questions.length && session.currentQuestionIndex < session.questions.length) {
+      const idx = text.charCodeAt(0) - 65; // 'A'=65
+      const selected = session.answersMap[idx];
+      const correct = session.questions[session.currentQuestionIndex].correctAnswer;
+
+      if (!selected) {
+        await sendMessage(chatId, '❗ Please answer with A, B, C, or D.');
+        return;
+      }
+
+      if (selected.toLowerCase() === correct.toLowerCase()) {
+        session.score++;
+        await sendMessage(chatId, '✅ Correct!');
+      } else {
+        await sendMessage(chatId, `❌ Wrong. Answer: ${correct}`);
+      }
+
+      session.currentQuestionIndex++;
+      if (session.currentQuestionIndex < session.questions.length) {
+        const next = session.questions[session.currentQuestionIndex];
+        session.answersMap = [...next.incorrectAnswers, next.correctAnswer].sort(() => Math.random() - 0.5);
+        await sendMessage(chatId, formatQuestion(next, session.currentQuestionIndex));
+      } else {
+        await sendMessage(chatId, `🎉 Quiz Over! Score: ${session.score}/${session.questions.length}`);
+        session.questions = [];
+      }
+      return;
+    }
+
+    // Fallback prompt
+    await sendMessage(chatId, '🤔 I did not understand. Type /start to begin.');
+  })();
 });
 
-// Health‑check endpoint
-app.get('/', (req, res) => res.send('🤖 Quiz Bot is Live'));
+// Health check
+app.get('/', (req, res) => res.send('🤖 Quiz Bot is live!'));
 
-// Listen
-const PORT = process.env.PORT || 10000;
+// Start server
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));

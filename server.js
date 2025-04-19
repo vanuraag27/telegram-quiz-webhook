@@ -4,16 +4,17 @@ import axios from 'axios';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config(); // ✅ ES module way to load .env
 
 const app = express();
 app.use(bodyParser.json());
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const userSessions = {};
 
+// ✅ Fetch questions dynamically from external API
 async function fetchQuestions(category, limit = 5) {
   try {
     const response = await axios.get('https://the-trivia-api.com/v2/questions', {

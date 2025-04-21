@@ -12,8 +12,6 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const PORT = process.env.PORT || 10000;
 
-const categories = ['General Knowledge', 'History', 'Science', 'Movies'];
-const countries = ['India', 'USA', 'UK', 'Canada', 'Australia'];
 const userSessions = {};
 const leaderboard = {};
 
@@ -27,13 +25,13 @@ async function fetchQuestions(category, limit = 5) {
       },
     });
     return response.data;
-  } catch (err) {
-    console.error('❌ Fetch error:', err);
+  } catch (error) {
+    console.error('❌ Error fetching questions:', error);
     return [];
   }
 }
 
-// Format one question with A/B/C/D options
+// Format question text
 function formatQuestion(questionObj, index) {
   const { question, correctAnswer, incorrectAnswers } = questionObj;
   const allAnswers = [...incorrectAnswers, correctAnswer].sort(() => Math.random() - 0.5);
@@ -43,120 +41,121 @@ function formatQuestion(questionObj, index) {
   return `Q${index + 1}: ${question.text}\n\n${options}`;
 }
 
-// Helper to send plain text
+// Send plain message
 async function sendMessage(chatId, text) {
-  return axios.post(`${TELEGRAM_API}/sendMessage`, {
+  await axios.post(`${TELEGRAM_API}/sendMessage`, {
     chat_id: chatId,
     text,
   });
 }
 
-// Send keyboard buttons
-async function sendKeyboard(chatId, text, options) {
-  const keyboard = options.map(opt => [{ text: opt }]);
-  return axios.post(`${TELEGRAM_API}/sendMessage`, {
+// Send keyboard for category selection
+async function sendCategoryKeyboard(chatId) {
+  const categories = ['General Knowledge', 'History', 'Science', 'Movies'];
+  const keyboard = categories.map((cat) => [{ text: cat }]);
+
+  await axios.post(`${TELEGRAM_API}/sendMessage`, {
     chat_id: chatId,
-    text,
+    text: '🧠 Choose a quiz category below:',
     reply_markup: {
       keyboard,
-      one_time_keyboard: true,
       resize_keyboard: true,
+      one_time_keyboard: true,
     },
   });
 }
 
-// Telegram webhook
 app.post('/webhook', async (req, res) => {
   const message = req.body.message;
-  if (!message?.chat?.id || !message.text) return res.sendStatus(200);
+  if (!message || !message.chat || !message.text) return res.sendStatus(200);
 
   const chatId = message.chat.id;
-  const userName = message.from?.username || `User_${chatId}`;
   const text = message.text.trim();
+  const userName = message.from.username || `User_${chatId}`;
 
   if (!userSessions[chatId]) {
-    userSessions[chatId] = { stage: 'start' };
+    userSessions[chatId] = {
+      score: 0,
+      currentQuestionIndex: 0,
+      questions: [],
+      category: '',
+    };
   }
 
   const session = userSessions[chatId];
 
+  // Start
   if (text === '/start') {
-    session.stage = 'category';
-    await sendMessage(chatId, '👋 Welcome to Quick Quiz Bot!\nTap a category to begin your quiz. Then pick your country.');
-    return sendKeyboard(chatId, '📚 Choose a quiz category:', categories);
+    await sendMessage(chatId, '👋 Welcome to Quick Quiz Bot!\nTap a category to begin your quiz. Answer with A, B, C, or D.');
+    await sendCategoryKeyboard(chatId);
   }
 
-  if (text === '/leaderboard') {
+  // Leaderboard
+  else if (text === '/leaderboard') {
     const sorted = Object.entries(leaderboard)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 5)
       .map(([name, score], i) => `${i + 1}. ${name}: ${score} pts`)
-      .join('\n') || '🏆 No scores yet!';
-    return sendMessage(chatId, `🏆 Leaderboard:\n${sorted}`);
+      .join('\n') || '📭 No scores yet!';
+    await sendMessage(chatId, `🏆 Top Players:\n${sorted}`);
   }
 
-  // Category selection
-  if (session.stage === 'category' && categories.includes(text)) {
+  // Category selected
+  else if (['General Knowledge', 'History', 'Science', 'Movies'].includes(text)) {
     session.category = text;
-    session.stage = 'country';
-    return sendKeyboard(chatId, '🌍 Choose your country:', countries);
-  }
-
-  // Country selection
-  if (session.stage === 'country' && countries.includes(text)) {
-    session.country = text;
-    session.stage = 'quiz';
-    session.score = 0;
+    session.questions = await fetchQuestions(text, 5);
     session.currentQuestionIndex = 0;
-    session.questions = await fetchQuestions(session.category, 5);
+    session.score = 0;
 
     if (!session.questions.length) {
-      session.stage = 'start';
       return sendMessage(chatId, '⚠️ Could not load questions. Try again later.');
     }
 
-    const intro = `🎯 Starting a ${session.category} quiz for ${session.country}...\n\n`;
     const qText = formatQuestion(session.questions[0], 0);
-    return sendMessage(chatId, intro + qText);
+    await sendMessage(chatId, `🎯 Starting "${text}" quiz...\n\n${qText}`);
   }
 
-  // Answering
-  if (session.stage === 'quiz' && session.questions?.length) {
+  // Answering a question
+  else if (session.questions.length && session.currentQuestionIndex < session.questions.length) {
     const currentQ = session.questions[session.currentQuestionIndex];
     const letter = text.toUpperCase();
     const index = letter.charCodeAt(0) - 65;
-    const selected = currentQ.shuffledAnswers?.[index];
+    const selectedAnswer = currentQ.shuffledAnswers?.[index];
 
-    if (!selected) {
+    if (!selectedAnswer) {
       return sendMessage(chatId, '❗ Please answer with A, B, C, or D.');
     }
 
-    if (selected.toLowerCase() === currentQ.correctAnswer.toLowerCase()) {
+    if (selectedAnswer.toLowerCase() === currentQ.correctAnswer.toLowerCase()) {
       session.score++;
       await sendMessage(chatId, '✅ Correct!');
     } else {
-      await sendMessage(chatId, `❌ Wrong! Correct: ${currentQ.correctAnswer}`);
+      await sendMessage(chatId, `❌ Incorrect. Correct answer: ${currentQ.correctAnswer}`);
     }
 
     session.currentQuestionIndex++;
 
     if (session.currentQuestionIndex < session.questions.length) {
       const nextQ = formatQuestion(session.questions[session.currentQuestionIndex], session.currentQuestionIndex);
-      return sendMessage(chatId, nextQ);
+      await sendMessage(chatId, nextQ);
     } else {
-      leaderboard[userName] = Math.max(session.score, leaderboard[userName] || 0);
-      await sendMessage(chatId, `🎉 Quiz complete!\nScore: ${session.score}/${session.questions.length}`);
+      await sendMessage(chatId, `🎉 Quiz complete!\nYour Score: ${session.score}/${session.questions.length}`);
+      leaderboard[userName] = Math.max(leaderboard[userName] || 0, session.score);
       delete userSessions[chatId];
-      return;
     }
   }
 
-  return sendMessage(chatId, 'ℹ️ Please type /start to begin or /leaderboard to view top players.');
+  // Unrecognized input
+  else {
+    await sendMessage(chatId, '❓ Unrecognized input. Type /start to begin or /leaderboard to view top players.');
+  }
+
+  res.sendStatus(200);
 });
 
-// Health check
+// Health check route
 app.get('/', (req, res) => {
-  res.send('✅ Quick Quiz Bot with country & category selection is live!');
+  res.send('✅ Quick Quiz Bot is live!');
 });
 
 app.listen(PORT, () => {
